@@ -170,15 +170,22 @@ for comp, cards in company_dict.items():
             # 2. 메인 대시보드 (세팅 완료 시)
             else:
                 last_tier_idx = st.session_state.last_month_tier[c_name]
+
+                last_tier_info = card["tiers"][last_tier_idx]
+
                 curr_tier_info, next_tier_info = get_tier_info(card, current_val)
-                
+
                 # 상단 혜택 요약
-                st.info(f"🏆 전월 실적 [last_tier_idx]['name']}** 달성! 이번 달 혜택이 적용 중입니다.")
+                st.info(
+                    f"🏆 전월 실적 {last_tier_info['name']} 달성! "
+                    f"이번 달 혜택이 적용 중입니다."
+                )
+                
                 if card["tier_benefits"]:
                     for benefit in card["tier_benefits"][last_tier_idx]:
                         st.write(f"✔️ {benefit}")
-                
-                st.markdown("---")
+                                
+                        st.markdown("---")
                 
                 # 실적 게이지
                 t_col1, t_col2 = st.columns(2)
