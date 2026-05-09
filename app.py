@@ -19,29 +19,46 @@ CARD_DB = {
             {"tier": 3, "name": "3구간", "min": 1500000, "max": float('inf')}
         ],
         "tier_benefits": {
-            0: ["🔥 특별 적립 1.0% (정비소, 타이어샵, 롯백, 현백, 3대마트, 토이저러스, CJ온스타일)", 
-                "💳 일반 적립 0.2% (국내외 전가맹점 *지방세/수도 제외)"],
-            1: ["🔥 특별 적립 2.0% (정비소, 타이어샵, 롯백, 현백, 3대마트, 토이저러스, CJ온스타일)", 
-                "💳 일반 적립 0.8% (국내외 전가맹점 *지방세/수도 제외)"],
-            2: ["🔥 특별 적립 3.5% (정비소, 타이어샵, 롯백, 현백, 3대마트, 토이저러스, CJ온스타일)", 
-                "💳 일반 적립 1.5% (국내외 전가맹점 *지방세/수도 제외)"],
-            3: ["🔥 특별 적립 5.0% (정비소, 타이어샵, 롯백, 현백, 3대마트, 토이저러스, CJ온스타일)", 
-                "💳 일반 적립 2.0% (국내외 전가맹점 *지방세/수도 제외)"]
+            0: ["🔥 특별 적립 1.0% (정비소, 백화점, 3대마트 등)", "💳 일반 적립 0.2%"],
+            1: ["🔥 특별 적립 2.0% (정비소, 백화점, 3대마트 등)", "💳 일반 적립 0.8%"],
+            2: ["🔥 특별 적립 3.5% (정비소, 백화점, 3대마트 등)", "💳 일반 적립 1.5%"],
+            3: ["🔥 특별 적립 5.0% (정비소, 백화점, 3대마트 등)", "💳 일반 적립 2.0%"]
         },
-        "common_benefits": ["🎢 에버랜드/롯데월드/서울랜드 50% 할인", "🌊 캐리비안베이 30% 할인"],
+        "common_benefits": ["🎢 에버랜드/롯데월드 50% 할인", "🌊 캐리비안베이 30% 할인"],
         "benefit_limits": {
             "무료주차": {"limit": 3, "type": "월간"},
             "공항라운지": {"limit": 2, "type": "연간"},
             "발레파킹": {"limit": 3, "type": "월간"}
         }
     },
-    
-    "Deep Oil": {
+    "Deep Eco": {
         "company": "신한카드",
         "gift_limit": 1000000,
-        "tiers": [{"tier": 0, "name": "기본", "min": 0, "max": 299999}, {"tier": 1, "name": "1구간", "min": 300000, "max": float('inf')}],
-        "tier_benefits": {0: ["혜택 없음"], 1: ["⛽ 주유 10% 결제일 할인 (임시)"]},
-        "common_benefits": ["🎬 영화 할인 (임시)"]
+        "cashback_limit": 30000,     # [신규] 통합 캐시백 한도
+        "gc_cashback_rate": 0.05,    # [신규] 상품권 구매 시 캐시백 적립률
+        "tiers": [
+            {"tier": 0, "name": "실적 미달", "min": 0, "max": 299999}, 
+            {"tier": 1, "name": "30만 이상 (혜택 활성)", "min": 300000, "max": float('inf')}
+        ],
+        "tier_benefits": {
+            0: ["❌ 전월 실적 미달 (이번 달 캐시백 없음)"], 
+            1: [
+                "♻️ [통합 캐시백 한도: 3만 원]",
+                "🚌 대중교통/전기차/모빌리티 5% 캐시백",
+                "🛒 온라인 구매(쿠팡/11번가/G마켓 등) 5% 캐시백",
+                "🎫 상품권 구매 5% 캐시백 (실적 및 한도 포함)"
+            ]
+        },
+        "common_benefits": [
+            "☕ 스타벅스 사이렌오더 1회 5천 원 (통합 한도 공유)",
+            "🚶 워크온 앱 만보기 15일 달성 5천 원 (통합 한도 별도)"
+        ],
+        "benefit_limits": {
+            # cashback 값이 있는 경우 버튼 클릭 시 통합 한도에 합산됨
+            "스벅 사이렌오더": {"limit": 5, "type": "월간", "cashback": 5000},
+            # 만보기는 별도 한도이므로 cashback을 0으로 처리 (합산 방지)
+            "만보기 15일 달성": {"limit": 1, "type": "월간", "cashback": 0}
+        }
     },
     
     # --- 삼성카드 ---
@@ -74,6 +91,10 @@ if 'is_setup_done' not in st.session_state:
 if 'gift_card_usage' not in st.session_state:
     companies = set(info["company"] for info in CARD_DB.values())
     st.session_state.gift_card_usage = {comp: 0 for comp in companies}
+
+# [신규] 카드별 확보한 캐시백 금액 트래킹
+if 'cashback_earned' not in st.session_state:
+    st.session_state.cashback_earned = {card: 0 for card in CARD_DB.keys()}
 
 if 'benefit_usage' not in st.session_state:
     st.session_state.benefit_usage = {}
@@ -113,11 +134,13 @@ def end_of_month_process():
                 if b_info["type"] == "월간":
                     st.session_state.benefit_usage[card_name][b_name] = 0
 
+    # 데이터 리셋
     st.session_state.current_usage = {k: 0 for k in st.session_state.current_usage}
     st.session_state.gift_card_usage = {k: 0 for k in st.session_state.gift_card_usage}
+    st.session_state.cashback_earned = {k: 0 for k in st.session_state.cashback_earned}
 
 # ======================================================================
-# [ 상단 ] 전체 카드 실적 현황
+# [ 상단 ] 전체 현황
 # ======================================================================
 st.title("💳 나의 카드 실적 대시보드")
 st.markdown("---")
@@ -132,7 +155,7 @@ top_col2.metric("이번 달 총 상품권 구매액 (상테크)", f"{total_gift_
 st.markdown("---")
 
 # ======================================================================
-# [ 중단 ] 카드사별 카드 리스트
+# [ 중단 ] 카드 상세
 # ======================================================================
 company_dict = {}
 for c_name, c_info in CARD_DB.items():
@@ -143,10 +166,9 @@ for c_name, c_info in CARD_DB.items():
 
 for comp, cards in company_dict.items():
     st.subheader(f"🏢 {comp}")
-    
     gc_limit = CARD_DB[cards[0]].get("gift_limit", 1000000)
     gc_used = st.session_state.gift_card_usage[comp]
-    st.caption(f"**[{comp} 상테크 통합 한도] {gc_used:,} / {gc_limit:,} 원")
+    st.caption(f"**[{comp} 상테크 통합 한도]** {gc_used:,} / {gc_limit:,} 원")
     
     for c_name in cards:
         card = CARD_DB[c_name]
@@ -163,28 +185,33 @@ for comp, cards in company_dict.items():
                         st.session_state.last_month_tier[c_name] = achieved_tier["tier"]
                         st.session_state.is_setup_done[c_name] = True
                         st.rerun()
-            
             else:
                 last_tier_idx = st.session_state.last_month_tier[c_name]
+                last_tier_info = card['tiers'][last_tier_idx]
                 curr_tier_info, next_tier_info = get_tier_info(card, current_val)
-                last_tier_info = card['tiers'][last_tier_idx]  # 👈 괄호가 꼬이지 않게 변수로 먼저 빼기
                 
-                # --- [수정된 부분] 혜택 한눈에 보기 UI ---
                 st.info(f"🏆 전월 실적 **{last_tier_info['name']}** 달성! 이번 달 아래 혜택이 적용됩니다.")
                 
-                # 1. 구간별 변동 혜택
                 if card.get("tier_benefits"):
                     st.write("**🎯 이번 달 적용 포인트/할인율**")
                     for benefit in card["tier_benefits"][last_tier_idx]:
                         st.write(f"✔️ {benefit}")
-                
-                # 2. 공통 프리미엄 혜택 (텍스트 나열형)
+                        
                 if card.get("common_benefits"):
                     st.write("**✨ 공통 혜택**")
                     for benefit in card["common_benefits"]:
                         st.caption(f"- {benefit}")
+                        
+                # ---------------------------------------------------
+                # [신규] 통합 캐시백 한도 게이지 바 표시
+                # ---------------------------------------------------
+                if "cashback_limit" in card and last_tier_idx > 0:
+                    cb_limit = card["cashback_limit"]
+                    cb_earned = st.session_state.cashback_earned[c_name]
+                    st.write("**💰 통합 캐시백 달성률 (3만 원 한도)**")
+                    st.progress(min(cb_earned / cb_limit, 1.0))
+                    st.caption(f"확보한 캐시백: **{int(cb_earned):,}원** / {cb_limit:,}원")
                 
-                # 3. 횟수 차감형 혜택 (버튼 트래킹형)
                 if card.get("benefit_limits"):
                     st.write("**🎟️ 횟수 차감형 혜택 관리**")
                     b_cols = st.columns(len(card["benefit_limits"]))
@@ -197,14 +224,18 @@ for comp, cards in company_dict.items():
                                 st.markdown(f"**{b_name}**")
                                 st.caption(f"{b_type} | {used}/{limit}회")
                                 st.progress(min(used / limit, 1.0))
-                                # 고유 키값을 부여하여 버튼 충돌 방지
                                 if st.button("사용하기", key=f"btn_{c_name}_{b_name}", disabled=(used >= limit)):
                                     st.session_state.benefit_usage[c_name][b_name] += 1
+                                    
+                                    # 버튼 누를 때 스벅 5천원 등 캐시백 금액 자동 합산
+                                    if b_info.get("cashback", 0) > 0:
+                                        st.session_state.cashback_earned[c_name] += b_info["cashback"]
+                                        if "cashback_limit" in card:
+                                            st.session_state.cashback_earned[c_name] = min(card["cashback_limit"], st.session_state.cashback_earned[c_name])
                                     st.rerun()
                 
                 st.markdown("---")
                 
-               # 실적 게이지
                 t_col1, t_col2 = st.columns(2)
                 t_col1.metric("현재 도달 구간", curr_tier_info['name'])
                 if next_tier_info:
@@ -216,7 +247,6 @@ for comp, cards in company_dict.items():
                     t_col2.metric("다음 구간 목표", "최고 구간", "MAX", delta_color="off")
                     st.progress(1.0)
                 
-                # 🌟 [추가된 부분] 현재 실적으로 달성한 혜택 실시간 표시
                 curr_tier_idx = curr_tier_info['tier']
                 if card.get("tier_benefits"):
                     st.success(f"💡 **현재까지 확보한 다음 달 혜택 ({curr_tier_info['name']} 기준)**")
@@ -225,14 +255,24 @@ for comp, cards in company_dict.items():
                 
                 st.markdown("---")
                 
-                # 실적 및 상품권 간편 입력 폼
                 in_col1, in_col2 = st.columns(2)
                 with in_col1:
                     with st.form(f"usage_form_{c_name}", clear_on_submit=True):
                         input_amount = st.number_input("일반 결제 추가 (원)", step=10000, value=0, key=f"amt_{c_name}")
+                        
+                        # [신규] 대중교통/온라인 등 5% 캐시백 대상 결제인지 체크
+                        is_cb_target = False
+                        if "cashback_limit" in card:
+                            is_cb_target = st.checkbox("5% 캐시백 대상(대중교통/온라인 등) 결제", key=f"chk_{c_name}")
+                            
                         if st.form_submit_button("합산하기") and input_amount != 0:
                             st.session_state.current_usage[c_name] += input_amount
+                            if is_cb_target:
+                                earned = input_amount * 0.05
+                                st.session_state.cashback_earned[c_name] += earned
+                                st.session_state.cashback_earned[c_name] = min(card["cashback_limit"], st.session_state.cashback_earned[c_name])
                             st.rerun()
+                            
                 with in_col2:
                     with st.form(f"gc_form_{c_name}", clear_on_submit=True):
                         gc_amount = st.number_input(f"{comp} 상품권 구매 (원)", step=50000, value=0, key=f"gc_amt_{c_name}")
@@ -242,10 +282,17 @@ for comp, cards in company_dict.items():
                             else:
                                 st.session_state.gift_card_usage[comp] += gc_amount
                                 st.session_state.current_usage[c_name] += gc_amount
+                                
+                                # [신규] 상품권 구매 시 5% 캐시백 자동 합산
+                                if card.get("gc_cashback_rate", 0) > 0:
+                                    earned = gc_amount * card["gc_cashback_rate"]
+                                    st.session_state.cashback_earned[c_name] += earned
+                                    if "cashback_limit" in card:
+                                        st.session_state.cashback_earned[c_name] = min(card["cashback_limit"], st.session_state.cashback_earned[c_name])
                                 st.rerun()
 
 # ======================================================================
-# [ 하단 ] 월별 히스토리
+# [ 하단 ] 월별 마감
 # ======================================================================
 st.markdown("---")
 st.subheader("📅 월별 누적 히스토리 및 마감")
