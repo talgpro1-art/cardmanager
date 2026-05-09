@@ -19,18 +19,23 @@ CARD_DB = {
             {"tier": 3, "name": "3구간", "min": 1500000, "max": float('inf')}
         ],
         "tier_benefits": {
-            0: ["🔥 특별 적립 1.0%", "💳 일반 적립 0.2%"],
-            1: ["🔥 특별 적립 2.0%", "💳 일반 적립 0.8%"],
-            2: ["🔥 특별 적립 3.5%", "💳 일반 적립 1.5%"],
-            3: ["🔥 특별 적립 5.0%", "💳 일반 적립 2.0%"]
+            0: ["🔥 특별 적립 1.0% (정비소, 타이어샵, 롯백, 현백, 3대마트, 토이저러스, CJ온스타일)", 
+                "💳 일반 적립 0.2% (국내외 전가맹점 *지방세/수도 제외)"],
+            1: ["🔥 특별 적립 2.0% (정비소, 타이어샵, 롯백, 현백, 3대마트, 토이저러스, CJ온스타일)", 
+                "💳 일반 적립 0.8% (국내외 전가맹점 *지방세/수도 제외)"],
+            2: ["🔥 특별 적립 3.5% (정비소, 타이어샵, 롯백, 현백, 3대마트, 토이저러스, CJ온스타일)", 
+                "💳 일반 적립 1.5% (국내외 전가맹점 *지방세/수도 제외)"],
+            3: ["🔥 특별 적립 5.0% (정비소, 타이어샵, 롯백, 현백, 3대마트, 토이저러스, CJ온스타일)", 
+                "💳 일반 적립 2.0% (국내외 전가맹점 *지방세/수도 제외)"]
         },
-        "common_benefits": ["🎢 에버랜드/롯데월드 50% 할인", "🌊 캐리비안베이 30% 할인"],
+        "common_benefits": ["🎢 에버랜드/롯데월드/서울랜드 50% 할인", "🌊 캐리비안베이 30% 할인"],
         "benefit_limits": {
             "무료주차": {"limit": 3, "type": "월간"},
             "공항라운지": {"limit": 2, "type": "연간"},
             "발레파킹": {"limit": 3, "type": "월간"}
         }
     },
+    
     "Deep Oil": {
         "company": "신한카드",
         "gift_limit": 1000000,
@@ -199,7 +204,7 @@ for comp, cards in company_dict.items():
                 
                 st.markdown("---")
                 
-                # 실적 게이지
+               # 실적 게이지
                 t_col1, t_col2 = st.columns(2)
                 t_col1.metric("현재 도달 구간", curr_tier_info['name'])
                 if next_tier_info:
@@ -210,6 +215,13 @@ for comp, cards in company_dict.items():
                 else:
                     t_col2.metric("다음 구간 목표", "최고 구간", "MAX", delta_color="off")
                     st.progress(1.0)
+                
+                # 🌟 [추가된 부분] 현재 실적으로 달성한 혜택 실시간 표시
+                curr_tier_idx = curr_tier_info['tier']
+                if card.get("tier_benefits"):
+                    st.success(f"💡 **현재까지 확보한 다음 달 혜택 ({curr_tier_info['name']} 기준)**")
+                    for benefit in card["tier_benefits"][curr_tier_idx]:
+                        st.caption(f"🎁 {benefit}")
                 
                 st.markdown("---")
                 
