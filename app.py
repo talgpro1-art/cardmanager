@@ -162,9 +162,10 @@ for comp, cards in company_dict.items():
             else:
                 last_tier_idx = st.session_state.last_month_tier[c_name]
                 curr_tier_info, next_tier_info = get_tier_info(card, current_val)
+                last_tier_info = card['tiers'][last_tier_idx]  # 👈 괄호가 꼬이지 않게 변수로 먼저 빼기
                 
                 # --- [수정된 부분] 혜택 한눈에 보기 UI ---
-                st.info(f"🏆 전월 실적 [last_tier_idx]['name']}** 달성! 이번 달 아래 혜택이 적용됩니다.")
+                st.info(f"🏆 전월 실적 **{last_tier_info['name']}** 달성! 이번 달 아래 혜택이 적용됩니다.")
                 
                 # 1. 구간별 변동 혜택
                 if card.get("tier_benefits"):
