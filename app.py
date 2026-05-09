@@ -34,8 +34,8 @@ CARD_DB = {
     "Deep Eco": {
         "company": "신한카드",
         "gift_limit": 1000000,
-        "cashback_limit": 30000,     # [신규] 통합 캐시백 한도
-        "gc_cashback_rate": 0.05,    # [신규] 상품권 구매 시 캐시백 적립률
+        "cashback_limit": 30000,     
+        "gc_cashback_rate": 0.05,    
         "tiers": [
             {"tier": 0, "name": "실적 미달", "min": 0, "max": 299999}, 
             {"tier": 1, "name": "30만 이상 (혜택 활성)", "min": 300000, "max": float('inf')}
@@ -50,13 +50,12 @@ CARD_DB = {
             ]
         },
         "common_benefits": [
-            "☕ 스타벅스 사이렌오더 1회 5천 원 (통합 한도 공유)",
+            "☕ 스타벅스 사이렌오더 1회 1천 원 적립 (월 5회, 통합 한도 공유)", # 👈 텍스트 수정
             "🚶 워크온 앱 만보기 15일 달성 5천 원 (통합 한도 별도)"
         ],
         "benefit_limits": {
-            # cashback 값이 있는 경우 버튼 클릭 시 통합 한도에 합산됨
-            "스벅 사이렌오더": {"limit": 5, "type": "월간", "cashback": 5000},
-            # 만보기는 별도 한도이므로 cashback을 0으로 처리 (합산 방지)
+            # 👈 cashback 값을 1000으로 수정! 이제 한 번 누를 때마다 1,000원씩 오릅니다.
+            "스벅 사이렌오더": {"limit": 5, "type": "월간", "cashback": 1000},
             "만보기 15일 달성": {"limit": 1, "type": "월간", "cashback": 0}
         }
     },
