@@ -76,7 +76,7 @@ company = card["company"]
 
 # --- [최상단] 이번 달 적용 혜택 (전월 실적 기준) ---
 last_tier_idx = st.session_state.last_month_tier[selected_card_name]
-st.info(f"🏆 **전월 실적 달성 안내: 지난달 [last_tier_idx]['name']} 달성으로, 이번 달은 아래 혜택이 적용됩니다.")
+st.info(f"🏆 **전월 실적 달성 안내: 지난달 [last_tier_idx]['name']}** 달성으로, 이번 달은 아래 혜택이 적용됩니다.")
 
 col_b1, col_b2 = st.columns(2)
 col_b1.success(f"🔥 특별 적립처: [last_tier_idx]}% 적립")
