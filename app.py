@@ -5,7 +5,7 @@ from datetime import datetime
 st.set_page_config(page_title="나만의 카드 실적 마스터", page_icon="💳", layout="wide")
 
 # ----------------------------------------------------------------------
-# 1. 카드 마스터 데이터 (신규 카드 임시 뼈대 추가)
+# 1. 카드 마스터 데이터
 # ----------------------------------------------------------------------
 CARD_DB = {
     # --- 신한카드 ---
@@ -57,9 +57,8 @@ CARD_DB = {
 }
 
 # ----------------------------------------------------------------------
-# 2. 데이터베이스(세션) 동적 초기화 (카드가 늘어나도 자동 대응)
+# 2. 데이터베이스(세션) 초기화
 # ----------------------------------------------------------------------
-# 딕셔너리 컴프리헨션으로 DB에 있는 모든 카드에 대해 초기값 세팅
 if 'current_usage' not in st.session_state:
     st.session_state.current_usage = {card: 0 for card in CARD_DB.keys()}
 if 'last_month_tier' not in st.session_state:
@@ -67,12 +66,10 @@ if 'last_month_tier' not in st.session_state:
 if 'is_setup_done' not in st.session_state:
     st.session_state.is_setup_done = {card: False for card in CARD_DB.keys()}
 
-# 상품권은 '카드사' 단위로 통합 관리
 if 'gift_card_usage' not in st.session_state:
     companies = set(info["company"] for info in CARD_DB.values())
     st.session_state.gift_card_usage = {comp: 0 for comp in companies}
 
-# 횟수 차감 혜택 트래킹
 if 'benefit_usage' not in st.session_state:
     st.session_state.benefit_usage = {}
     for card, info in CARD_DB.items():
@@ -130,9 +127,8 @@ top_col2.metric("이번 달 총 상품권 구매액 (상테크)", f"{total_gift_
 st.markdown("---")
 
 # ======================================================================
-# [ 중단 ] 카드사별 카드 리스트 (Tree 구조)
+# [ 중단 ] 카드사별 카드 리스트
 # ======================================================================
-# DB를 순회하며 카드사별로 카드를 분류
 company_dict = {}
 for c_name, c_info in CARD_DB.items():
     comp = c_info["company"]
@@ -140,11 +136,9 @@ for c_name, c_info in CARD_DB.items():
         company_dict[comp] = []
     company_dict[comp].append(c_name)
 
-# 카드사별로 UI 렌더링
 for comp, cards in company_dict.items():
     st.subheader(f"🏢 {comp}")
     
-    # 해당 카드사의 상품권 공통 한도 표시
     gc_limit = CARD_DB[cards[0]].get("gift_limit", 1000000)
     gc_used = st.session_state.gift_card_usage[comp]
     st.caption(f"**[{comp} 상테크 통합 한도] {gc_used:,} / {gc_limit:,} 원")
@@ -153,10 +147,8 @@ for comp, cards in company_dict.items():
         card = CARD_DB[c_name]
         current_val = st.session_state.current_usage[c_name]
         
-        # 카드를 누르면 펼쳐지는 Expander 형태
         with st.expander(f"💳 {c_name} (현재 실적: {current_val:,} 원)", expanded=False):
             
-            # 1. 최초 세팅 락(Lock)
             if not st.session_state.is_setup_done[c_name]:
                 st.warning("⚠️ 이번 달 혜택 계산을 위해 지난달 실적을 먼저 입력해주세요.")
                 with st.form(f"setup_{c_name}"):
@@ -167,25 +159,44 @@ for comp, cards in company_dict.items():
                         st.session_state.is_setup_done[c_name] = True
                         st.rerun()
             
-            # 2. 메인 대시보드 (세팅 완료 시)
             else:
                 last_tier_idx = st.session_state.last_month_tier[c_name]
-
-                last_tier_info = card["tiers"][last_tier_idx]
-
                 curr_tier_info, next_tier_info = get_tier_info(card, current_val)
-
-                # 상단 혜택 요약
-                st.info(
-                    f"🏆 전월 실적 {last_tier_info['name']} 달성! "
-                    f"이번 달 혜택이 적용 중입니다."
-                )
                 
-                if card["tier_benefits"]:
+                # --- [수정된 부분] 혜택 한눈에 보기 UI ---
+                st.info(f"🏆 전월 실적 [last_tier_idx]['name']}** 달성! 이번 달 아래 혜택이 적용됩니다.")
+                
+                # 1. 구간별 변동 혜택
+                if card.get("tier_benefits"):
+                    st.write("**🎯 이번 달 적용 포인트/할인율**")
                     for benefit in card["tier_benefits"][last_tier_idx]:
                         st.write(f"✔️ {benefit}")
-                                
-                        st.markdown("---")
+                
+                # 2. 공통 프리미엄 혜택 (텍스트 나열형)
+                if card.get("common_benefits"):
+                    st.write("**✨ 공통 혜택**")
+                    for benefit in card["common_benefits"]:
+                        st.caption(f"- {benefit}")
+                
+                # 3. 횟수 차감형 혜택 (버튼 트래킹형)
+                if card.get("benefit_limits"):
+                    st.write("**🎟️ 횟수 차감형 혜택 관리**")
+                    b_cols = st.columns(len(card["benefit_limits"]))
+                    for idx, (b_name, b_info) in enumerate(card["benefit_limits"].items()):
+                        limit = b_info["limit"]
+                        used = st.session_state.benefit_usage[c_name][b_name]
+                        b_type = b_info["type"]
+                        with b_cols[idx]:
+                            with st.container(border=True):
+                                st.markdown(f"**{b_name}**")
+                                st.caption(f"{b_type} | {used}/{limit}회")
+                                st.progress(min(used / limit, 1.0))
+                                # 고유 키값을 부여하여 버튼 충돌 방지
+                                if st.button("사용하기", key=f"btn_{c_name}_{b_name}", disabled=(used >= limit)):
+                                    st.session_state.benefit_usage[c_name][b_name] += 1
+                                    st.rerun()
+                
+                st.markdown("---")
                 
                 # 실적 게이지
                 t_col1, t_col2 = st.columns(2)
