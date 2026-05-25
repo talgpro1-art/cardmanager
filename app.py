@@ -15,6 +15,11 @@ COMPANY_RULES = {
     '신한카드': {'gift_limit': 1_000_000},
 }
 
+LIFESTYLE_DISCOUNT_TIERS = [
+    {'min_usage': 300_000, 'rate': 0.10, 'cap': 10_000},
+    {'min_usage': 500_000, 'rate': 0.10, 'cap': 20_000},
+]
+
 CARD_DB = {
     'RPM': {
         'company': '신한카드',
@@ -123,6 +128,49 @@ CARD_DB = {
             'more_points': {'name': '다음달 예상 포인트', 'monthly_cap': None},
         },
     },
+    '신한 EV': {
+        'company': '신한카드',
+        'tiers': [
+            {'level': 0, 'name': '실적 미달', 'min': 0},
+            {'level': 1, 'name': '30만 이상', 'min': 300_000},
+            {'level': 2, 'name': '50만 이상', 'min': 500_000},
+            {'level': 3, 'name': '60만 이상', 'min': 600_000},
+        ],
+        'benefits_by_tier': {
+            0: ['전월 실적 미달'],
+            1: ['전기차 충전 30% 할인(2만 원 한도)', '생활할인 10%(1만 원 한도)'],
+            2: ['전기차 충전 30% 할인(2만 원 한도)', '생활할인 10%(2만 원 한도)'],
+            3: ['전기차 충전 50% 할인(2만 원 한도)', '생활할인 10%(2만 원 한도)'],
+        },
+        'spend_categories': {
+            '일반결제': {'counts_for_tier': True},
+            '전기차충전': {
+                'counts_for_tier': True,
+                'discount_pool': 'ev_charging',
+                'discount_tiers': [
+                    {'min_usage': 300_000, 'rate': 0.30, 'cap': 20_000},
+                    {'min_usage': 600_000, 'rate': 0.50, 'cap': 20_000},
+                ],
+            },
+            '생활할인-편의점': {'counts_for_tier': True, 'discount_pool': 'ev_lifestyle', 'discount_tiers': LIFESTYLE_DISCOUNT_TIERS},
+            '생활할인-병원/약국': {'counts_for_tier': True, 'discount_pool': 'ev_lifestyle', 'discount_tiers': LIFESTYLE_DISCOUNT_TIERS},
+            '생활할인-3대마트(주말)': {
+                'counts_for_tier': True,
+                'discount_pool': 'ev_lifestyle',
+                'discount_tiers': LIFESTYLE_DISCOUNT_TIERS,
+                'category_monthly_cap': 5_000,
+            },
+            '생활할인-지하철': {'counts_for_tier': True, 'discount_pool': 'ev_lifestyle', 'discount_tiers': LIFESTYLE_DISCOUNT_TIERS},
+            '생활할인-택시': {'counts_for_tier': True, 'discount_pool': 'ev_lifestyle', 'discount_tiers': LIFESTYLE_DISCOUNT_TIERS},
+            '생활할인-커피': {'counts_for_tier': True, 'discount_pool': 'ev_lifestyle', 'discount_tiers': LIFESTYLE_DISCOUNT_TIERS},
+            '실적제외': {'counts_for_tier': False},
+        },
+        'benefit_rules': {},
+        'cashback_pools': {
+            'ev_charging': {'name': '전기차 충전 할인', 'monthly_cap': None},
+            'ev_lifestyle': {'name': '생활할인', 'monthly_cap': None},
+        },
+    },
 }
 
 
@@ -208,6 +256,14 @@ def get_tier(card_info, usage):
     return current_tier, next_tier
 
 
+def get_discount_tier(discount_tiers, prev_usage):
+    matched = None
+    for tier in sorted(discount_tiers, key=lambda item: item['min_usage']):
+        if prev_usage >= tier['min_usage']:
+            matched = tier
+    return matched
+
+
 def tier_spend_for_month(data, key, card_name):
     card_info = CARD_DB[card_name]
     total = 0
@@ -243,6 +299,8 @@ def empty_stats():
         'benefit_awarded': {},
         'benefit_total': 0,
         'payment_count': 0,
+        'pool_caps': {},
+        'category_discount_raw': {},
     }
 
 
@@ -270,11 +328,13 @@ def calculate_month(data, key):
             continue
         card_name = tx['card']
         card_info = CARD_DB[card_name]
-        rule = card_info['spend_categories'].get(tx.get('category'), {})
+        category = tx.get('category')
+        rule = card_info['spend_categories'].get(category, {})
         direction = tx.get('direction', 1)
         base_amount = tx.get('amount', 0)
         signed_amount = base_amount * direction
         stats = stats_by_card[card_name]
+        prev_usage_value = prev_context[card_name]['usage']
         prev_level = prev_context[card_name]['tier']['level']
         required_tier = rule.get('requires_prev_tier', 0)
 
@@ -292,6 +352,24 @@ def calculate_month(data, key):
             if base_amount >= rule.get('more_point_min', 5_000):
                 points = (base_amount % 1_000) * rule['more_point_multiplier'] * direction
                 add_benefit(stats, rule.get('more_point_pool'), points)
+
+        if rule.get('discount_tiers'):
+            discount_tier = get_discount_tier(rule['discount_tiers'], prev_usage_value)
+            if discount_tier:
+                discount_amount = base_amount * discount_tier['rate'] * direction
+                category_cap = rule.get('category_monthly_cap')
+                if category_cap is not None:
+                    category_key = f'{card_name}:{category}'
+                    used_for_category = stats['category_discount_raw'].get(category_key, 0)
+                    if discount_amount >= 0:
+                        available = max(0, category_cap - used_for_category)
+                        discount_amount = min(discount_amount, available)
+                    else:
+                        discount_amount = max(discount_amount, -used_for_category)
+                    stats['category_discount_raw'][category_key] = used_for_category + discount_amount
+                add_benefit(stats, rule.get('discount_pool'), discount_amount)
+                if discount_tier.get('cap') is not None:
+                    stats['pool_caps'][rule['discount_pool']] = discount_tier['cap']
 
     for card_name, card_info in CARD_DB.items():
         stats = stats_by_card[card_name]
@@ -319,7 +397,7 @@ def calculate_month(data, key):
 
         for pool_key, raw_amount in stats['benefit_raw'].items():
             pool_info = card_info.get('cashback_pools', {}).get(pool_key, {})
-            cap = pool_info.get('monthly_cap')
+            cap = stats['pool_caps'].get(pool_key, pool_info.get('monthly_cap'))
             awarded = max(0, raw_amount)
             if cap is not None:
                 awarded = min(awarded, cap)
@@ -460,7 +538,7 @@ with tab_dashboard:
                     st.write('혜택/포인트 한도')
                     for pool_key, pool_info in card_info['cashback_pools'].items():
                         awarded = stats['benefit_awarded'].get(pool_key, 0)
-                        cap = pool_info.get('monthly_cap')
+                        cap = stats['pool_caps'].get(pool_key, pool_info.get('monthly_cap'))
                         if cap is None:
                             st.caption(f'{pool_info["name"]}: {money(awarded)}')
                         else:
