@@ -7,15 +7,12 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-
 st.set_page_config(page_title='카드 실적 매니저', page_icon='💳', layout='wide')
 
 DATA_FILE = Path(__file__).with_name('cardmanager_data.json')
 
 COMPANY_RULES = {
     '신한카드': {'gift_limit': 1_000_000},
-    '삼성카드': {'gift_limit': 1_000_000},
-    '카드사 미정': {'gift_limit': 1_000_000},
 }
 
 CARD_DB = {
@@ -94,69 +91,37 @@ CARD_DB = {
             'walkon_reward': {'name': '만보기 리워드', 'monthly_cap': 5_000},
         },
     },
-    'taptap': {
-        'company': '삼성카드',
+    '더모아': {
+        'company': '신한카드',
         'tiers': [
-            {'level': 0, 'name': '기본', 'min': 0},
+            {'level': 0, 'name': '실적 미달', 'min': 0},
             {'level': 1, 'name': '30만 이상', 'min': 300_000},
         ],
-        'benefits_by_tier': {0: ['혜택 없음'], 1: ['스타벅스 50% 할인']},
-        'spend_categories': {
-            '일반결제': {'counts_for_tier': True},
-            '커피/선택혜택': {'counts_for_tier': True},
-            '상품권': {'counts_for_tier': True, 'gift_group': 'company'},
-            '실적제외': {'counts_for_tier': False},
+        'benefits_by_tier': {
+            0: ['전월 실적 미달'],
+            1: ['5천 원 이상 결제 시 1천 원 미만 금액 포인트 적립', '더블적립처(배민/요기요/해외결제)는 2배 적립'],
         },
-        'benefit_rules': {
-            '스타벅스 할인': {'limit': 6, 'period': 'monthly', 'requires_prev_tier': 1},
-        },
-        'cashback_pools': {},
-    },
-    'iD ON': {
-        'company': '삼성카드',
-        'tiers': [
-            {'level': 0, 'name': '기본', 'min': 0},
-            {'level': 1, 'name': '30만 이상', 'min': 300_000},
-        ],
-        'benefits_by_tier': {0: ['혜택 없음'], 1: ['많이 쓰는 영역 30% 할인']},
         'spend_categories': {
-            '일반결제': {'counts_for_tier': True},
-            '많이 쓰는 영역': {'counts_for_tier': True},
-            '상품권': {'counts_for_tier': True, 'gift_group': 'company'},
+            '일반결제': {
+                'counts_for_tier': True,
+                'more_point_multiplier': 1,
+                'more_point_pool': 'more_points',
+                'more_point_min': 5_000,
+                'requires_prev_tier': 1,
+            },
+            '더블적립처': {
+                'counts_for_tier': True,
+                'more_point_multiplier': 2,
+                'more_point_pool': 'more_points',
+                'more_point_min': 5_000,
+                'requires_prev_tier': 1,
+            },
             '실적제외': {'counts_for_tier': False},
         },
         'benefit_rules': {},
-        'cashback_pools': {},
-    },
-    '카드5': {
-        'company': '카드사 미정',
-        'tiers': [
-            {'level': 0, 'name': '기본', 'min': 0},
-            {'level': 1, 'name': '30만 이상', 'min': 300_000},
-        ],
-        'benefits_by_tier': {0: ['혜택 없음'], 1: ['카드 혜택 입력 예정']},
-        'spend_categories': {
-            '일반결제': {'counts_for_tier': True},
-            '상품권': {'counts_for_tier': True, 'gift_group': 'company'},
-            '실적제외': {'counts_for_tier': False},
+        'cashback_pools': {
+            'more_points': {'name': '다음달 예상 포인트', 'monthly_cap': None},
         },
-        'benefit_rules': {},
-        'cashback_pools': {},
-    },
-    '카드6': {
-        'company': '카드사 미정',
-        'tiers': [
-            {'level': 0, 'name': '기본', 'min': 0},
-            {'level': 1, 'name': '30만 이상', 'min': 300_000},
-        ],
-        'benefits_by_tier': {0: ['혜택 없음'], 1: ['카드 혜택 입력 예정']},
-        'spend_categories': {
-            '일반결제': {'counts_for_tier': True},
-            '상품권': {'counts_for_tier': True, 'gift_group': 'company'},
-            '실적제외': {'counts_for_tier': False},
-        },
-        'benefit_rules': {},
-        'cashback_pools': {},
     },
 }
 
@@ -172,13 +137,10 @@ def default_data():
 def ensure_data_shape(data):
     shaped = deepcopy(default_data())
     if isinstance(data, dict):
-        for key in shaped:
-            if key in data:
-                shaped[key] = data[key]
-    if not isinstance(shaped.get('transactions'), list):
-        shaped['transactions'] = []
-    if not isinstance(shaped.get('manual_prev_usage'), dict):
-        shaped['manual_prev_usage'] = {}
+        if isinstance(data.get('transactions'), list):
+            shaped['transactions'] = data['transactions']
+        if isinstance(data.get('manual_prev_usage'), dict):
+            shaped['manual_prev_usage'].update(data['manual_prev_usage'])
     for card_name in CARD_DB:
         shaped['manual_prev_usage'].setdefault(card_name, 0)
     return shaped
@@ -207,7 +169,7 @@ def money(value):
     return f'{int(round(value)):,} 원'
 
 
-def clamp_ratio(value):
+def ratio(value):
     return max(0.0, min(float(value), 1.0))
 
 
@@ -232,16 +194,13 @@ def next_month_key(key):
 
 
 def period_key(tx_date, period):
-    if period == 'yearly':
-        return str(tx_date)[:4]
-    return str(tx_date)[:7]
+    return str(tx_date)[:4] if period == 'yearly' else str(tx_date)[:7]
 
 
 def get_tier(card_info, usage):
-    tiers = sorted(card_info['tiers'], key=lambda item: item['min'])
-    current_tier = tiers[0]
+    current_tier = card_info['tiers'][0]
     next_tier = None
-    for tier in tiers:
+    for tier in sorted(card_info['tiers'], key=lambda item: item['min']):
         if usage >= tier['min']:
             current_tier = tier
         elif next_tier is None:
@@ -249,28 +208,28 @@ def get_tier(card_info, usage):
     return current_tier, next_tier
 
 
-def get_tier_spend_for_month(data, key, card_name):
-    total = 0
-    found_payment = False
+def tier_spend_for_month(data, key, card_name):
     card_info = CARD_DB[card_name]
+    total = 0
+    found = False
     for tx in data['transactions']:
         if tx.get('kind') != 'payment':
             continue
         if tx.get('card') != card_name or month_key(tx.get('date', '')) != key:
             continue
-        found_payment = True
+        found = True
         rule = card_info['spend_categories'].get(tx.get('category'), {})
         amount = tx.get('amount', 0) * tx.get('direction', 1)
         if rule.get('counts_for_tier', True):
             total += amount
-    return max(0, total), found_payment
+    return max(0, total), found
 
 
-def get_prev_usage_source(data, key, card_name):
+def previous_usage(data, key, card_name):
     prev_key = previous_month_key(key)
-    prev_usage, found_prev_payment = get_tier_spend_for_month(data, prev_key, card_name)
-    if found_prev_payment:
-        return prev_usage, f'{prev_key} 거래'
+    usage, found = tier_spend_for_month(data, prev_key, card_name)
+    if found:
+        return usage, f'{prev_key} 거래'
     return data['manual_prev_usage'].get(card_name, 0), '초기값'
 
 
@@ -278,30 +237,28 @@ def empty_stats():
     return {
         'gross_spend': 0,
         'tier_spend': 0,
-        'excluded_spend': 0,
         'gift_spend': 0,
-        'cashback_raw': {},
-        'cashback_awarded': {},
-        'cashback_total': 0,
         'benefit_counts': {},
+        'benefit_raw': {},
+        'benefit_awarded': {},
+        'benefit_total': 0,
         'payment_count': 0,
-        'benefit_count': 0,
     }
 
 
-def add_cashback(stats, pool_key, amount):
+def add_benefit(stats, pool_key, amount):
     if not pool_key or amount == 0:
         return
-    stats['cashback_raw'][pool_key] = stats['cashback_raw'].get(pool_key, 0) + amount
+    stats['benefit_raw'][pool_key] = stats['benefit_raw'].get(pool_key, 0) + amount
 
 
 def calculate_month(data, key):
     stats_by_card = {card_name: empty_stats() for card_name in CARD_DB}
     prev_context = {}
     for card_name, card_info in CARD_DB.items():
-        prev_usage, source = get_prev_usage_source(data, key, card_name)
-        prev_tier, _ = get_tier(card_info, prev_usage)
-        prev_context[card_name] = {'usage': prev_usage, 'source': source, 'tier': prev_tier}
+        usage, source = previous_usage(data, key, card_name)
+        tier, _ = get_tier(card_info, usage)
+        prev_context[card_name] = {'usage': usage, 'source': source, 'tier': tier}
 
     month_transactions = [
         tx for tx in data['transactions']
@@ -314,19 +271,27 @@ def calculate_month(data, key):
         card_name = tx['card']
         card_info = CARD_DB[card_name]
         rule = card_info['spend_categories'].get(tx.get('category'), {})
-        amount = tx.get('amount', 0) * tx.get('direction', 1)
+        direction = tx.get('direction', 1)
+        base_amount = tx.get('amount', 0)
+        signed_amount = base_amount * direction
         stats = stats_by_card[card_name]
+        prev_level = prev_context[card_name]['tier']['level']
+        required_tier = rule.get('requires_prev_tier', 0)
+
         stats['payment_count'] += 1
-        stats['gross_spend'] += amount
+        stats['gross_spend'] += signed_amount
         if rule.get('counts_for_tier', True):
-            stats['tier_spend'] += amount
-        else:
-            stats['excluded_spend'] += amount
+            stats['tier_spend'] += signed_amount
         if rule.get('gift_group'):
-            stats['gift_spend'] += amount
-        if prev_context[card_name]['tier']['level'] >= rule.get('requires_prev_tier', 0):
-            if rule.get('cashback_rate'):
-                add_cashback(stats, rule.get('cashback_pool'), amount * rule['cashback_rate'])
+            stats['gift_spend'] += signed_amount
+
+        if prev_level >= required_tier and rule.get('cashback_rate'):
+            add_benefit(stats, rule.get('cashback_pool'), signed_amount * rule['cashback_rate'])
+
+        if prev_level >= required_tier and rule.get('more_point_multiplier'):
+            if base_amount >= rule.get('more_point_min', 5_000):
+                points = (base_amount % 1_000) * rule['more_point_multiplier'] * direction
+                add_benefit(stats, rule.get('more_point_pool'), points)
 
     for card_name, card_info in CARD_DB.items():
         stats = stats_by_card[card_name]
@@ -350,17 +315,17 @@ def calculate_month(data, key):
                     continue
                 if prev_level < rule.get('requires_prev_tier', 0):
                     continue
-                stats['benefit_count'] += 1
-                add_cashback(stats, rule.get('cashback_pool'), rule.get('cashback_per_use', 0))
+                add_benefit(stats, rule.get('cashback_pool'), rule.get('cashback_per_use', 0))
 
-        for pool_key, raw_amount in stats['cashback_raw'].items():
+        for pool_key, raw_amount in stats['benefit_raw'].items():
             pool_info = card_info.get('cashback_pools', {}).get(pool_key, {})
             cap = pool_info.get('monthly_cap')
             awarded = max(0, raw_amount)
             if cap is not None:
                 awarded = min(awarded, cap)
-            stats['cashback_awarded'][pool_key] = awarded
-            stats['cashback_total'] += awarded
+            stats['benefit_awarded'][pool_key] = awarded
+            stats['benefit_total'] += awarded
+
         stats['gross_spend'] = max(0, stats['gross_spend'])
         stats['tier_spend'] = max(0, stats['tier_spend'])
         stats['gift_spend'] = max(0, stats['gift_spend'])
@@ -387,10 +352,7 @@ def available_months(data):
 
 
 def append_transaction(data, transaction):
-    tx = {
-        'id': uuid.uuid4().hex[:8],
-        'created_at': datetime.now().isoformat(timespec='seconds'),
-    }
+    tx = {'id': uuid.uuid4().hex[:8], 'created_at': datetime.now().isoformat(timespec='seconds')}
     tx.update(transaction)
     data['transactions'].append(tx)
     save_data(data)
@@ -403,8 +365,7 @@ def delete_transaction(data, tx_id):
 
 def transaction_frame(transactions):
     rows = []
-    sorted_txs = sorted(transactions, key=lambda item: item.get('date', ''), reverse=True)
-    for tx in sorted_txs:
+    for tx in sorted(transactions, key=lambda item: item.get('date', ''), reverse=True):
         amount = tx.get('amount', 0) * tx.get('direction', 1)
         rows.append({
             'ID': tx.get('id'),
@@ -428,11 +389,16 @@ company_gifts = gift_usage_by_company(stats_by_card)
 
 st.title('카드 실적 매니저')
 
+total_tier_spend = sum(item['tier_spend'] for item in stats_by_card.values())
+total_gift_spend = sum(company_gifts.values())
+total_benefit = sum(item['benefit_total'] for item in stats_by_card.values())
+total_payments = sum(item['payment_count'] for item in stats_by_card.values())
+
 summary_cols = st.columns(4)
-summary_cols[0].metric('실적 인정액', money(sum(item['tier_spend'] for item in stats_by_card.values())))
-summary_cols[1].metric('상품권', money(sum(company_gifts.values())))
-summary_cols[2].metric('예상 캐시백', money(sum(item['cashback_total'] for item in stats_by_card.values())))
-summary_cols[3].metric('결제 건수', f'{sum(item["payment_count"] for item in stats_by_card.values()):,}건')
+summary_cols[0].metric('실적 인정액', money(total_tier_spend))
+summary_cols[1].metric('상품권', money(total_gift_spend))
+summary_cols[2].metric('예상 혜택금액', money(total_benefit))
+summary_cols[3].metric('결제 건수', f'{total_payments:,}건')
 
 tab_dashboard, tab_input, tab_history, tab_settings = st.tabs(['대시보드', '입력', '거래내역', '설정'])
 
@@ -450,7 +416,7 @@ with tab_dashboard:
             '이번달 실적': int(stats['tier_spend']),
             '다음달 예상': current_tier['name'],
             '다음구간까지': int(max(0, remain)),
-            '캐시백': int(stats['cashback_total']),
+            '혜택금액': int(stats['benefit_total']),
         })
     st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
 
@@ -461,43 +427,45 @@ with tab_dashboard:
         used_gift = company_gifts.get(company, 0)
         with st.expander(f'{company} · 상품권 {money(used_gift)} / {money(company_limit)}', expanded=True):
             if company_limit:
-                st.progress(clamp_ratio(used_gift / company_limit))
+                st.progress(ratio(used_gift / company_limit))
             for card_name in company_cards:
                 card_info = CARD_DB[card_name]
                 stats = stats_by_card[card_name]
                 prev_tier = prev_context[card_name]['tier']
                 current_tier, next_tier = get_tier(card_info, stats['tier_spend'])
                 st.markdown(f'#### {card_name}')
-                card_cols = st.columns(4)
-                card_cols[0].metric('전월 기준', prev_tier['name'], prev_context[card_name]['source'])
-                card_cols[1].metric('이번달 실적', money(stats['tier_spend']))
-                card_cols[2].metric('다음달 예상', current_tier['name'])
-                card_cols[3].metric('예상 캐시백', money(stats['cashback_total']))
+                cols = st.columns(4)
+                cols[0].metric('전월 기준', prev_tier['name'], prev_context[card_name]['source'])
+                cols[1].metric('이번달 실적', money(stats['tier_spend']))
+                cols[2].metric('다음달 예상', current_tier['name'])
+                cols[3].metric('예상 혜택금액', money(stats['benefit_total']))
                 if next_tier:
                     remain = max(0, next_tier['min'] - stats['tier_spend'])
-                    st.progress(clamp_ratio(stats['tier_spend'] / next_tier['min']))
+                    st.progress(ratio(stats['tier_spend'] / next_tier['min']))
                     st.caption(f'다음 구간 {next_tier["name"]}까지 {money(remain)}')
                 else:
                     st.progress(1.0)
 
-                col_a, col_b = st.columns(2)
-                with col_a:
+                benefit_cols = st.columns(2)
+                with benefit_cols[0]:
                     st.write('이번달 적용 혜택')
                     for benefit in card_info.get('benefits_by_tier', {}).get(prev_tier['level'], []):
                         st.caption(f'- {benefit}')
-                with col_b:
+                with benefit_cols[1]:
                     st.write('다음달 예상 혜택')
                     for benefit in card_info.get('benefits_by_tier', {}).get(current_tier['level'], []):
                         st.caption(f'- {benefit}')
 
                 if card_info.get('cashback_pools'):
-                    st.write('캐시백 한도')
+                    st.write('혜택/포인트 한도')
                     for pool_key, pool_info in card_info['cashback_pools'].items():
-                        cap = pool_info.get('monthly_cap', 0)
-                        awarded = stats['cashback_awarded'].get(pool_key, 0)
-                        st.caption(f'{pool_info["name"]}: {money(awarded)} / {money(cap)}')
-                        if cap:
-                            st.progress(clamp_ratio(awarded / cap))
+                        awarded = stats['benefit_awarded'].get(pool_key, 0)
+                        cap = pool_info.get('monthly_cap')
+                        if cap is None:
+                            st.caption(f'{pool_info["name"]}: {money(awarded)}')
+                        else:
+                            st.caption(f'{pool_info["name"]}: {money(awarded)} / {money(cap)}')
+                            st.progress(ratio(awarded / cap))
 
                 if card_info.get('benefit_rules'):
                     st.write('횟수형 혜택')
@@ -509,7 +477,7 @@ with tab_dashboard:
                         with status_cols[index % len(status_cols)]:
                             st.caption(f'{benefit_name} · {period_label} {used}/{limit}회')
                             if limit:
-                                st.progress(clamp_ratio(used / limit))
+                                st.progress(ratio(used / limit))
                 st.divider()
 
 with tab_input:
